@@ -1,0 +1,12 @@
+name: Build and docs
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and check documentation
+        run: bash scripts/check.sh
