@@ -86,21 +86,23 @@ _Static_assert(sizeof(SMCPacket)==80,"SMC ABI size");
 _Static_assert(offsetof(SMCPacket,command)==42,"SMC command offset");
 static uint32_t fourcc(const char *key) { return (uint32_t)(uint8_t)key[0]<<24 | (uint32_t)(uint8_t)key[1]<<16 | (uint32_t)(uint8_t)key[2]<<8 | (uint8_t)key[3]; }
 typedef struct { const char *key; SMCInfo info; } Sensor;
-static Sensor cpu_sensors[]={ {"Tp09",{0}},{"Tp0T",{0}},{"Tp01",{0}},{"Tp05",{0}},{"Tp0D",{0}},{"Tp0H",{0}},{"Tp0L",{0}},{"Tp0P",{0}},{"Tp0X",{0}},{"Tp0b",{0}} };
-static Sensor gpu_sensors[]={ {"Tg05",{0}},{"Tg0D",{0}},{"Tg0L",{0}},{"Tg0T",{0}} };
+// SMC keys verified on M1 Max; HID sensors are not included. Missing keys remain partial.
+static Sensor cpu_sensors[]={ {"Te00",{0}},{"Te01",{0}},{"Te02",{0}},{"Tp00",{0}},{"Tp01",{0}},{"Tp02",{0}},{"Tp04",{0}},{"Tp05",{0}},{"Tp06",{0}},{"Tp08",{0}},{"Tp09",{0}},{"Tp0A",{0}},{"Tp0C",{0}},{"Tp0D",{0}},{"Tp0E",{0}},{"Tp0G",{0}},{"Tp0H",{0}},{"Tp0I",{0}},{"Tp0K",{0}},{"Tp0L",{0}},{"Tp0M",{0}},{"Tp0O",{0}},{"Tp0P",{0}},{"Tp0Q",{0}},{"Tp0S",{0}},{"Tp0T",{0}},{"Tp0U",{0}},{"Tp0W",{0}},{"Tp0X",{0}},{"Tp0Y",{0}},{"Tp0a",{0}},{"Tp0b",{0}},{"Tp0c",{0}} };
+static Sensor gpu_sensors[]={ {"TG0H",{0}},{"Tg04",{0}},{"Tg05",{0}},{"Tg0C",{0}},{"Tg0D",{0}},{"Tg0K",{0}},{"Tg0L",{0}},{"Tg0S",{0}},{"Tg0T",{0}} };
 static bool call(SMCPacket *in,SMCPacket *out) { size_t length=sizeof(*out); memset(out,0,sizeof(*out)); return IOConnectCallStructMethod(smc,2,in,sizeof(*in),out,&length)==KERN_SUCCESS && length==sizeof(*out) && out->result==0; }
 TSTemperature ts_temperature(bool gpu) {
-    TSTemperature t={.maximum=NAN,.expected=gpu?4:10};
+    TSTemperature t={.maximum=NAN,.expected=gpu?(int)(sizeof(gpu_sensors)/sizeof(*gpu_sensors)):(int)(sizeof(cpu_sensors)/sizeof(*cpu_sensors))};
     // These mappings are scoped to M1 generation. Unknown models remain unsupported.
     char model[128]={0}; size_t model_size=sizeof(model); if(sysctlbyname("machdep.cpu.brand_string",model,&model_size,NULL,0)!=0 || !strstr(model,"Apple M1")) return t;
     if(!smc) { io_service_t service=IOServiceGetMatchingService(kIOMainPortDefault,IOServiceMatching("AppleSMC")); if(!service)return t; kern_return_t result=IOServiceOpen(service,mach_task_self(),0,&smc); IOObjectRelease(service); if(result!=KERN_SUCCESS){smc=0;return t;} }
     Sensor *s=gpu?gpu_sensors:cpu_sensors;
     for(int i=0;i<t.expected;i++) {
         SMCPacket in={0},out={0}; in.key=fourcc(s[i].key);
-        if(!s[i].info.size) { in.command=9; if(!call(&in,&out))continue; if(out.info.size!=4 && out.info.size!=2)continue; s[i].info=out.info; }
+        if(!s[i].info.size) { in.command=9; if(!call(&in,&out))continue; if(out.info.size!=4 && out.info.size!=2 && out.info.size!=8)continue; s[i].info=out.info; }
         in.info=s[i].info; in.command=5; if(!call(&in,&out)){s[i].info.size=0;continue;}
         double v=NAN;
         if(s[i].info.type==fourcc("flt ") && s[i].info.size==4) { float f;memcpy(&f,out.bytes,4);v=f; }
+        else if(s[i].info.type==fourcc("ioft") && s[i].info.size==8) { uint64_t fixed;memcpy(&fixed,out.bytes,8);v=(double)fixed/65536.0; }
         else if(s[i].info.type==fourcc("sp78") && s[i].info.size==2) v=(int16_t)((out.bytes[0]<<8)|out.bytes[1])/256.0;
         if(isfinite(v) && v>0 && v<130) { if(!t.found || v>t.maximum)t.maximum=v; t.found++; }
     }
@@ -114,7 +116,7 @@ TSProcessCoverage ts_processes(TSProcess *out,int capacity) {
     int actual=proc_listpids(PROC_ALL_PIDS,0,pids,slots*sizeof(pid_t)); if(actual<=0){c.error=errno?errno:EIO;free(pids);return c;}
     if(actual>=slots*(int)sizeof(pid_t))c.truncated=true;
     int n=actual/(int)sizeof(pid_t);
-    static mach_timebase_info_data_t scale; if(!scale.denom)mach_timebase_info(&scale);
+    mach_timebase_info_data_t scale; mach_timebase_info(&scale);
     for(int i=0;i<n;i++) {
         if(pids[i]<=0)continue;c.listed++;
         if(c.read>=capacity){c.truncated=true;continue;}
@@ -132,6 +134,11 @@ void ts_process_name(int pid,uint64_t start,char *name,int capacity) {
         snprintf(name,(size_t)capacity,"PID %d",pid);
     name[capacity-1]=0;
 }
+int ts_process_threads(int pid,uint64_t start) {
+    struct proc_taskinfo info={0};
+    if(proc_pidinfo(pid,PROC_PIDTASKINFO,0,&info,sizeof(info))!=sizeof(info) || !ts_process_matches(pid,start))return -1;
+    return info.pti_threadnum;
+}
 void ts_close(void) { if(smc){IOServiceClose(smc);smc=0;}if(accelerator){IOObjectRelease(accelerator);accelerator=0;}if(host){mach_port_deallocate(mach_task_self(),host);host=0;}ts_reset(); }
 
 TSResources ts_resources(void) {
@@ -139,4 +146,9 @@ TSResources ts_resources(void) {
     if(getrusage(RUSAGE_SELF,&usage)==0)r.cpu_seconds=usage.ru_utime.tv_sec+usage.ru_utime.tv_usec/1e6+usage.ru_stime.tv_sec+usage.ru_stime.tv_usec/1e6;
     struct rusage_info_v4 info={0};if(proc_pid_rusage(getpid(),RUSAGE_INFO_V4,(rusage_info_t*)&info)==0){r.rss=info.ri_resident_size;r.footprint=info.ri_phys_footprint;r.wakeups=info.ri_pkg_idle_wkups;}
     return r;
+}
+
+bool ts_process_matches(int pid,uint64_t start) {
+    struct rusage_info_v2 usage={0};
+    return pid>1 && start>0 && proc_pid_rusage(pid,RUSAGE_INFO_V2,(rusage_info_t*)&usage)==0 && usage.ri_proc_start_abstime==start;
 }

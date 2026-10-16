@@ -2,6 +2,7 @@
 #define TINYSTAT_TELEMETRY_H
 #include <stdint.h>
 #include <stdbool.h>
+#include "AgentProcess.h"
 #define TS_MAX_CORES 256
 
 typedef struct {
@@ -20,8 +21,10 @@ void ts_reset(void);
 TSGPU ts_gpu(void);
 TSTemperature ts_temperature(bool gpu);
 TSProcessCoverage ts_processes(TSProcess *out, int capacity);
+int ts_process_threads(int pid, uint64_t start);
 void ts_process_name(int pid, uint64_t start, char *name, int capacity);
 typedef struct { double cpu_seconds, rss, footprint; uint64_t wakeups; } TSResources;
 TSResources ts_resources(void);
+bool ts_process_matches(int pid, uint64_t start);
 void ts_close(void);
 #endif

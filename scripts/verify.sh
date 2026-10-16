@@ -11,4 +11,5 @@ for test in probe cpu-time; do
 done
 xcrun swiftc -O -swift-version 5 -target arm64-apple-macosx13.0 -import-objc-header Sources/Telemetry.h Sources/Model.swift tests/sampling.swift build/Telemetry.o -framework AppKit -framework IOKit -o build/test-sampling
 build/test-sampling
+bash scripts/verify-assistant.sh
 codesign --verify --strict build/TinyStat.app

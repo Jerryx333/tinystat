@@ -5,7 +5,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build/TinyStat.app/Contents/MacOS
 xcrun clang -arch arm64 -O2 -Wall -Wextra -Werror -mmacosx-version-min=13.0 -c Sources/Telemetry.c -o build/Telemetry.o
-xcrun swiftc -Osize -whole-module-optimization -swift-version 5 -target arm64-apple-macosx13.0 -import-objc-header Sources/Telemetry.h Sources/*.swift build/Telemetry.o -framework AppKit -framework IOKit -framework ServiceManagement -o build/TinyStat.app/Contents/MacOS/TinyStat
+xcrun clang -arch arm64 -O2 -Wall -Wextra -Werror -mmacosx-version-min=13.0 -c Sources/AgentProcess.c -o build/AgentProcess.o
+xcrun swiftc -Osize -whole-module-optimization -swift-version 5 -target arm64-apple-macosx13.0 -import-objc-header Sources/Telemetry.h Sources/*.swift build/Telemetry.o build/AgentProcess.o -framework AppKit -framework IOKit -framework ServiceManagement -o build/TinyStat.app/Contents/MacOS/TinyStat
+cp build/TinyStat.app/Contents/MacOS/TinyStat build/TinyStat.unstripped
+xcrun strip -S -x build/TinyStat.app/Contents/MacOS/TinyStat
 cp Info.plist build/TinyStat.app/Contents/Info.plist
 codesign --force --sign - build/TinyStat.app
 printf 'Built: %s/build/TinyStat.app\n' "$PWD"

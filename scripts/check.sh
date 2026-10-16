@@ -4,6 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 bash scripts/build.sh
+bash scripts/verify-assistant.sh
+bash scripts/verify-ui.sh
+python3 scripts/verify-sandbox.py
 codesign --verify --strict build/TinyStat.app
 bash -n scripts/*.sh
 python3 scripts/check_docs.py

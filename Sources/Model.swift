@@ -2,23 +2,29 @@ import Foundation
 import AppKit
 
 let gib = 1_073_741_824.0
-func bytes(_ value: Double) -> String { value >= gib ? String(format: "%.1f GB", value / gib) : String(format: "%.0f MB", value / 1_048_576) }
+func bytes(_ value: Double) -> String { value >= gib ? String(format: "%.1f GiB", value / gib) : String(format: "%.0f MiB", value / 1_048_576) }
 func percent(_ value: Double?) -> String { value.map { String(format: "%.0f%%", $0) } ?? "—" }
 func temperature(_ value: TSTemperature?) -> String {
     guard let v = value else { return "—" }; guard v.found > 0, v.maximum.isFinite else { return "不可用" }
     return String(format: "%.0f°C", v.maximum) + (v.found < v.expected ? "*" : "")
 }
+enum Metric:String {case cpu,gpu,memory}
+struct MetricPoint {let time:Double;let cpu:Double?;let gpu:Double?;let memory:Double?}
 enum Page: String { case overview, details, settings }
 enum Rank: String { case cpu, memory }
+enum RefreshCadence {
+    static let opened=2.0
+    static let closed=5.0
+}
 struct Demand: Equatable {
     var visible = false
     var page = Page.overview
     var rank = Rank.cpu
     var advanced = false
-    var interval = 5.0
-    var processes: Bool { visible && page == .details }
-    var gpu: Bool { visible && page != .settings }
-    var cores: Bool { processes && advanced }
+    var inspection:Metric?
+    var processes: Bool { visible && (page == .details || inspection == .cpu || inspection == .memory) }
+    var gpuTemperature: Bool { visible && page != .settings }
+    var cores: Bool { processes && (advanced || inspection == .cpu) }
 }
 struct HistoryPoint { let time: Double; let user: Double; let system: Double }
 struct ProcessRow { let pid: Int32; let name: String; let value: Double }
@@ -30,6 +36,7 @@ struct Snapshot {
     var cpuTemperature: TSTemperature?
     var gpuTemperature: TSTemperature?
     var history: [HistoryPoint] = []
+    var metricHistory:[MetricPoint]=[]
     var rows: [ProcessRow] = []
     var coverage = TSProcessCoverage()
     var rankingReady = false
@@ -58,10 +65,7 @@ final class Sampler {
     private var state = Snapshot()
     private var lastBasicDate = -Double.infinity
     private var lastProcessDate = -Double.infinity
-    private var lastGPUUsageDate = -Double.infinity
-    private var raw = [TSProcess](repeating: TSProcess(), count: 4096)
-    private var lastCPUDate = -Double.infinity
-    private var lastGPUDate = -Double.infinity
+    private var raw: [TSProcess] = []
     private var previous: [ProcessIdentity: CPUCounter] = [:]
     private var priorDemand = Demand()
     private var highLoadSince: Double?
@@ -72,23 +76,29 @@ final class Sampler {
     private(set) var temperatureSamples = 0
     private(set) var sampleCPU = 0.0
 
+    private func clearProcesses() {
+        raw.removeAll();previous.removeAll();state.rows.removeAll()
+        state.rankingReady = false; state.coverage = TSProcessCoverage(); lastProcessDate = -.infinity
+    }
     func resetDetails() {
-        previous.removeAll(keepingCapacity: true); state.rows.removeAll(keepingCapacity: true)
-        state.rankingReady = false; state.coverage = TSProcessCoverage(); priorDemand = Demand(); lastProcessDate = -.infinity
+        clearProcesses();priorDemand = Demand()
     }
     func reset() {
         ts_reset(); resetDetails(); state = Snapshot(); highLoadSince=nil
-        lastBasicDate = -.infinity; lastCPUDate = -.infinity; lastGPUDate = -.infinity; lastGPUUsageDate = -.infinity
+        lastBasicDate = -.infinity
     }
-    func sample(_ demand: Demand) -> Snapshot {
+    func sample(_ demand: Demand, forceReadings:Bool=false) -> Snapshot {
         let start = ProcessInfo.processInfo.systemUptime
         samples += 1
-        if !demand.processes || demand.rank != priorDemand.rank || !priorDemand.processes {
+        if !demand.processes {
+            clearProcesses()
+        } else if demand.rank != priorDemand.rank || !priorDemand.processes {
             previous.removeAll(keepingCapacity: true); state.rows.removeAll(keepingCapacity: true)
             state.rankingReady = false; lastProcessDate = -.infinity
         }
         // User interaction may request an immediate update; never turn a few CPU ticks into a new rate.
-        if start - lastBasicDate >= 1 {
+        let refreshReadings = forceReadings || start - lastBasicDate >= 1
+        if refreshReadings {
             ts_basic(&state.basic, demand.cores); basicSamples += 1
             lastBasicDate = start
             if let cpu = state.cpu, cpu >= 90 {
@@ -102,13 +112,20 @@ final class Sampler {
         state.thermal = ProcessInfo.processInfo.thermalState
         state.history.removeAll { start - $0.time > 120 }
         if state.history.count > 64 { state.history.removeFirst(state.history.count - 64) }
-        if start - lastCPUDate >= 10 { state.cpuTemperature = ts_temperature(false); temperatureSamples += 1; lastCPUDate = start }
-        if demand.gpu {
-            if start - lastGPUUsageDate >= 1 || !priorDemand.gpu { state.gpu = ts_gpu(); gpuSamples += 1; lastGPUUsageDate = start }
-            if start - lastGPUDate >= 10 || !priorDemand.gpu { state.gpuTemperature = ts_temperature(true); temperatureSamples += 1; lastGPUDate = start }
-        } else { state.gpu = nil; state.gpuTemperature = nil }
+        if refreshReadings || (demand.gpuTemperature && !priorDemand.gpuTemperature) { state.cpuTemperature = ts_temperature(false); temperatureSamples += 1 }
+        // Retain actual GPU history even while closed; temperature sensors remain demand-driven.
+        if refreshReadings {state.gpu=ts_gpu();gpuSamples+=1}
+        if demand.gpuTemperature {
+            if refreshReadings || !priorDemand.gpuTemperature {state.gpuTemperature=ts_temperature(true);temperatureSamples+=1}
+        }else{state.gpuTemperature=nil}
+        if refreshReadings {
+            state.metricHistory.append(MetricPoint(time:start,cpu:state.cpu,gpu:state.gpu?.valid == true ? state.gpu?.percent:nil,memory:state.memoryPercent))
+            state.metricHistory.removeAll{start-$0.time>120}
+            if state.metricHistory.count>128{state.metricHistory.removeFirst(state.metricHistory.count-128)}
+        }
         if demand.processes && start - lastProcessDate >= 1 {
             processSamples += 1
+            if raw.isEmpty { raw = [TSProcess](repeating:TSProcess(),count:4096) }
             state.coverage = raw.withUnsafeMutableBufferPointer { ts_processes($0.baseAddress, Int32($0.count)) }
             let now = ProcessInfo.processInfo.systemUptime
             var next: [ProcessIdentity: CPUCounter] = [:]

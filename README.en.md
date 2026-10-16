@@ -6,20 +6,21 @@ CPU, GPU, memory and temperatures in a small native macOS menu-bar monitor.
 
 ## Why it exists
 
-Full system monitors often include panels and background work you never use. TinyStat puts essential readings in the menu bar. Click for a compact overview; move the pointer away to close it. CPU/GPU and memory share one detail view.
+TinyStat keeps CPU, GPU, memory and temperatures visible. Ask why a reading is high: the assistant receives a dated snapshot and the leading processes, explains the evidence, and lets you decide what to handle.
 
-- Separate CPU and GPU temperatures, with system thermal state and memory pressure indicating strain.
-- Top five processes, sortable by CPU or memory; additional metrics stay collapsed.
-- Refreshes every 10 seconds while closed and every 5 seconds by default while open. GPU, process and per-core readings depend on the visible page.
-- Swift, AppKit and a small C telemetry bridge. System frameworks only, with no network requests or third-party runtime.
+- Three passive metric cards. Sending a question opens a separate chat window that survives closing the menu.
+- Expand each check to inspect processes, timestamps and coverage; observations stay separate from inferences and unknowns.
+- Connect a local Codex / Claude Code CLI or configure a compatible provider; API keys stay in Keychain.
+- Confirm action cards to request a normal application quit or move a user-selected regular file to Trash. Receipts and fresh checks follow.
+- No model calls until you ask. Native Swift + AppKit; GPU usage history retained continuously, temperatures on demand, fixed 5-second closed and 2-second open refresh.
 
 ## Current status
 
-**Early usable version with limited compatibility coverage.** Targets Apple Silicon and macOS 13+. Hardware validation covers only M1 Max on macOS 26.4; earlier OS versions are deployment targets, not verified runtime support. The UI is currently Chinese-only; temperature mappings cover only the M1 family. Other chips show temperatures as unavailable instead of guessing sensor identities.
+**Early usable version with limited compatibility coverage.** Targets Apple Silicon and macOS 13+. Hardware validation covers only M1 Max on macOS 26.4; earlier OS versions are deployment targets, not verified runtime support. The UI is currently Chinese-only; temperatures use the maximum valid mapped M1 SMC reading, excluding HID; 33 CPU and 9 GPU keys were verified on M1 Max, with missing keys marked `*`. Other chips show temperatures as unavailable instead of guessing sensor identities.
 
 This is not a complete iStat Menus replacement: no network speed, disk monitoring, weather, fan control or notifications. There is no Apple-notarized download yet; build from source. OS changes may affect undocumented read-only sensor interfaces.
 
-The app bundle is approximately 0.3 MB. Short reference runs measured about 0.06%–0.10% of one CPU core while closed and 0.20%–0.37% with visible pages. These development measurements are **not guarantees for every Mac**. Resident memory after opening the UI still needs improvement. See [performance methodology and limitations](docs/performance.md).
+The app bundle is approximately 0.5 MB, excluding external agent CLIs. Historical monitor benchmarks do not measure chat costs. Model requests launch a temporary CLI process group that is cleaned up on completion or cancellation. See [performance methodology and historical results](docs/performance.md).
 
 ## Get started
 
@@ -42,6 +43,7 @@ The menu-bar item starts near the right edge. Command-drag it to rearrange; its 
 ```sh
 bash scripts/check.sh       # Build, signature and documentation checks; suitable for CI
 bash scripts/verify.sh      # Hardware sensor and sampling checks; requires M1 Max
+bash scripts/verify-assistant.sh # Offline assistant and action-boundary checks
 ```
 
 Reproducible bug reports, sensor support and measured performance improvements are welcome. Do not include secrets, complete process lists or screenshots of private windows. Read [contributing](CONTRIBUTING.md).
