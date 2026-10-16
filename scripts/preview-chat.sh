@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 cat Sources/AssistantUI.swift tests/chat-preview.swift > build/AssistantUIPreview.swift
-xcrun swiftc -O -swift-version 5 -target arm64-apple-macosx13.0 -import-objc-header Sources/Telemetry.h Sources/Model.swift Sources/Diagnostics.swift Sources/Appearance.swift Sources/AssistantActions.swift Sources/AgentBackend.swift build/AssistantUIPreview.swift build/Telemetry.o build/AgentProcess.o -framework AppKit -framework IOKit -framework Security -o build/chat-preview
+xcrun swiftc -O -swift-version 5 -target arm64-apple-macosx13.0 -import-objc-header Sources/Telemetry.h Sources/Model.swift Sources/Diagnostics.swift Sources/Appearance.swift Sources/AssistantActions.swift Sources/AgentBackend.swift Sources/Investigation.swift Sources/Conversation.swift build/AssistantUIPreview.swift build/Telemetry.o build/AgentProcess.o -framework AppKit -framework IOKit -framework Security -o build/chat-preview
 mkdir -p build/ChatPreview.app/Contents/MacOS
 cp build/chat-preview build/ChatPreview.app/Contents/MacOS/ChatPreview
 cat > build/ChatPreview.app/Contents/Info.plist <<'PLIST'

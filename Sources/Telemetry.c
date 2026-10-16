@@ -152,3 +152,28 @@ bool ts_process_matches(int pid,uint64_t start) {
     struct rusage_info_v2 usage={0};
     return pid>1 && start>0 && proc_pid_rusage(pid,RUSAGE_INFO_V2,(rusage_info_t*)&usage)==0 && usage.ri_proc_start_abstime==start;
 }
+int ts_process_status(int pid,uint64_t start) {
+    struct rusage_info_v2 usage={0};
+    if(pid<=1 || !start)return 3;
+    if(proc_pid_rusage(pid,RUSAGE_INFO_V2,(rusage_info_t*)&usage)!=0)return errno==ESRCH ? 1:3;
+    return usage.ri_proc_start_abstime==start ? 0:2;
+}
+int ts_process_parent(int pid,uint64_t start,int *parent,unsigned *uid,unsigned *ruid) {
+    struct proc_bsdinfo b={0};
+    if(proc_pidinfo(pid,PROC_PIDTBSDINFO,0,&b,sizeof(b))!=sizeof(b) || !ts_process_matches(pid,start))return 0;
+    *parent=(int)b.pbi_ppid;*uid=b.pbi_uid;*ruid=b.pbi_ruid;return 1;
+}
+int ts_process_path(int pid,uint64_t start,char *path,int capacity) {
+    if(capacity<1)return 0;
+    if(proc_pidpath(pid,path,(uint32_t)capacity)<=0 || !ts_process_matches(pid,start)){path[0]=0;return 0;}
+    path[capacity-1]=0;return 1;
+}
+
+int ts_process_sample(int pid,uint64_t start,TSProcess *out) {
+    struct rusage_info_v2 usage={0};
+    if(proc_pid_rusage(pid,RUSAGE_INFO_V2,(rusage_info_t*)&usage)!=0)return errno==ESRCH ? 1:3;
+    if(usage.ri_proc_start_abstime!=start)return 2;
+    mach_timebase_info_data_t scale;mach_timebase_info(&scale);
+    memset(out,0,sizeof(*out));out->pid=pid;out->start=start;out->memory=usage.ri_phys_footprint;
+    out->cpu_ns=(uint64_t)(((__uint128_t)usage.ri_user_time+usage.ri_system_time)*scale.numer/scale.denom);return 0;
+}

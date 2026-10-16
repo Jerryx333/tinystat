@@ -15,7 +15,7 @@ extension AssistantController {
 @main struct ChatPreview {
     static func main(){
         let app=NSApplication.shared;app.setActivationPolicy(.regular)
-        let controller=AssistantController(snapshot:{_ in fatalError("Preview must not collect telemetry")})
+        let controller=AssistantController(snapshot:{_ in fatalError("Preview must not collect telemetry")},persistent:false)
         controller.previewConversation();withExtendedLifetime(controller){app.run()}
     }
 }

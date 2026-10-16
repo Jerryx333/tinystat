@@ -45,6 +45,16 @@ struct FileTarget {
         var st=stat()
         guard url.path==url.resolvingSymlinksInPath().path,lstat(url.path,&st)==0,st.st_dev==device,st.st_ino==inode,st.st_size==size,st.st_mtimespec.tv_sec==modified,st.st_mtimespec.tv_nsec==nanos,st.st_ctimespec.tv_sec==changed,st.st_ctimespec.tv_nsec==changeNanos,(st.st_mode&S_IFMT)==S_IFREG,st.st_uid==getuid() else {throw AssistantFailure("文件已变化或被替换，未移动；请重新选择。")}
     }
+    func readText()throws->String {
+        try validate()
+        let fd=open(url.path,O_RDONLY|O_NOFOLLOW)
+        guard fd>=0 else{throw AssistantFailure("无法打开所选文件。")};defer{close(fd)}
+        var st=stat();guard fstat(fd,&st)==0,st.st_dev==device,st.st_ino==inode,st.st_size==size,size<=8192,st.st_nlink==1 else{throw AssistantFailure("仅支持未变化的 8 KiB 以内单链接文本文件。")}
+        let handle=FileHandle(fileDescriptor:fd,closeOnDealloc:false)
+        let data=try handle.read(upToCount:8193) ?? Data()
+        try validate()
+        guard data.count==Int(size),let text=String(data:data,encoding:.utf8),!text.contains("\0") else{throw AssistantFailure("不是完整 UTF-8 文本，未发送。")};return text
+    }
     func trash()throws -> String {
         try validate();var destination:NSURL?
         try FileManager.default.trashItem(at:url,resultingItemURL:&destination)
@@ -64,4 +74,23 @@ struct ActionProtection {
 }
 func displayIdentity(_ value:String)->String {
     String(value.unicodeScalars.map{CharacterSet.controlCharacters.contains($0) || CharacterSet(charactersIn:"\u{202a}\u{202b}\u{202c}\u{202d}\u{202e}\u{2066}\u{2067}\u{2068}\u{2069}").contains($0) ? "�":String($0)}.joined().prefix(2048))
+}
+
+/// User-chosen output only. Exclusive creation cannot overwrite an existing path.
+enum TextExport {
+    static func write(_ text:String,to url:URL)throws {
+        let data=Data(text.utf8)
+        guard data.count<=8192,url.isFileURL else{throw AssistantFailure("另存文本超过8 KiB或路径无效。")}
+        let parent=url.deletingLastPathComponent()
+        guard parent.standardizedFileURL.path==parent.resolvingSymlinksInPath().path else{throw AssistantFailure("保存目录不能经过符号链接。")}
+        let fd=open(url.path,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0o600)
+        guard fd>=0 else{throw AssistantFailure("无法创建新文件（\(errno)）。已有文件不会覆盖。")};defer{close(fd)}
+        var offset=0
+        while offset<data.count {
+            let n=data.withUnsafeBytes{Darwin.write(fd,$0.baseAddress!.advanced(by:offset),data.count-offset)}
+            if n<0 && errno==EINTR{continue}
+            guard n>0 else{throw AssistantFailure("写入未完成；部分新文件保留于 \(url.path)，原文件未修改。")};offset+=n
+        }
+        guard fsync(fd)==0 else{throw AssistantFailure("文件已写入但同步失败：\(url.path)。")}
+    }
 }

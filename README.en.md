@@ -6,10 +6,10 @@ CPU, GPU, memory and temperatures in a small native macOS menu-bar monitor.
 
 ## Why it exists
 
-TinyStat keeps CPU, GPU, memory and temperatures visible. Ask why a reading is high: the assistant receives a dated snapshot and the leading processes, explains the evidence, and lets you decide what to handle.
+TinyStat keeps CPU, GPU, memory and temperatures visible. Ask why a reading is high: the assistant requests scoped checks, explains the evidence, and lets you authorize reads and actions.
 
 - Three passive metric cards. Sending a question opens a separate chat window that survives closing the menu.
-- Expand each check to inspect processes, timestamps and coverage; observations stay separate from inferences and unknowns.
+- Approve process checks, short trends or selected text reads; browse, continue and delete bounded local conversation history.
 - Connect a local Codex / Claude Code CLI or configure a compatible provider; API keys stay in Keychain.
 - Confirm action cards to request a normal application quit or move a user-selected regular file to Trash. Receipts and fresh checks follow.
 - No model calls until you ask. Native Swift + AppKit; GPU usage history retained continuously, temperatures on demand, fixed 5-second closed and 2-second open refresh.
@@ -20,7 +20,7 @@ TinyStat keeps CPU, GPU, memory and temperatures visible. Ask why a reading is h
 
 This is not a complete iStat Menus replacement: no network speed, disk monitoring, weather, fan control or notifications. There is no Apple-notarized download yet; build from source. OS changes may affect undocumented read-only sensor interfaces.
 
-The app bundle is approximately 0.5 MB, excluding external agent CLIs. Historical monitor benchmarks do not measure chat costs. Model requests launch a temporary CLI process group that is cleaned up on completion or cancellation. See [performance methodology and historical results](docs/performance.md).
+The app bundle is approximately 0.6 MB, excluding external agent CLIs. Historical monitor benchmarks do not measure chat costs. Model requests launch a temporary CLI process group that is cleaned up on completion or cancellation. See [performance methodology and historical results](docs/performance.md).
 
 ## Get started
 

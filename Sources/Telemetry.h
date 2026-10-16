@@ -27,4 +27,9 @@ typedef struct { double cpu_seconds, rss, footprint; uint64_t wakeups; } TSResou
 TSResources ts_resources(void);
 bool ts_process_matches(int pid, uint64_t start);
 void ts_close(void);
+// Status: 0 same identity, 1 absent, 2 reused, 3 unreadable.
+int ts_process_status(int pid,uint64_t start);
+int ts_process_sample(int pid,uint64_t start,TSProcess *out);
+int ts_process_parent(int pid,uint64_t start,int *parent,unsigned *uid,unsigned *ruid);
+int ts_process_path(int pid,uint64_t start,char *path,int capacity);
 #endif

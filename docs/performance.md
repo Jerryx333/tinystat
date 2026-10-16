@@ -58,6 +58,12 @@ Closed state must add zero process samples and one GPU usage read per basic samp
 
 ## Assistant UI (2026-10-15)
 
-The native overview/chat build is approximately 0.5 MB, excluding Codex/Claude CLIs. The earlier six-state table describes the previous detail-page interface; `cpu`, `memory`, and `advanced` benchmark modes now exercise retained sampler paths rather than visible product pages. They are not current UI performance claims.
+The native overview/chat build is approximately 0.6 MB, excluding Codex/Claude CLIs. The earlier six-state table describes the previous detail-page interface; `cpu`, `memory`, and `advanced` benchmark modes now exercise retained sampler paths rather than visible product pages. They are not current UI performance claims.
 
 An interactive UI smoke run changed pages during measurement, so its CPU/RSS results are not a fixed-state benchmark and are excluded. Full equivalent before/after tasks, token usage and peak process-family memory for live diagnosis have not yet been measured. Offline contract tests do not establish model performance. Model calls are explicit, with a 120-second request deadline, 1 MiB stdout cap, bounded conversation history and process-group cleanup; the external CLI can still dominate memory and CPU while a request runs.
+
+## Bounded conversation verification
+
+`bash scripts/verify-conversation-ui.sh` exercises the production native views with a synthetic model: 1,080 messages across six close/reopen cycles, 40 messages per page, at most 60 live rows, stable button-handler counts, and actual accepted/cancelled read-grant callbacks. The model context is limited to 24 recent messages / 24 KiB independently of archives (30 sessions, each 200 messages / 256 KiB). Only the active transcript is held between interactions; history enumeration decodes bounded files sequentially and retains metadata.
+
+On the development M1 Max, one correctly drained AppKit event-loop run measured 16.89 s wall time, 15.84 s process CPU, 17.14 MiB initial footprint, 64.55 MiB final footprint, and 73.36 MiB sampled peak. Cycle-end footprint stayed roughly 56–63 MiB instead of increasing per cycle. Earlier tight-loop tests without appropriate autorelease/event-loop boundaries accumulated temporary AppKit allocations and are not comparable to ordinary user interaction. The corrected harness remains intentionally much faster than a real chat. These numbers cover the native process only, not external model CLI process-family peaks, remote token usage, disk archive I/O, or long-term real-model conversations. They do not establish zero retention or universal resource costs.
